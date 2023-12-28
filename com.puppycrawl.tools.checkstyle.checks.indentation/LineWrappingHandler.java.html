@@ -1,0 +1,521 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LineWrappingHandler.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">checkstyle</a> &gt; <a href="index.source.html" class="el_package">com.puppycrawl.tools.checkstyle.checks.indentation</a> &gt; <span class="el_source">LineWrappingHandler.java</span></div><h1>LineWrappingHandler.java</h1><pre class="source lang-java linenums">///////////////////////////////////////////////////////////////////////////////////////////////
+// checkstyle: Checks Java source code and other text files for adherence to a set of rules.
+// Copyright (C) 2001-2023 the original author or authors.
+//
+// This library is free software; you can redistribute it and/or
+// modify it under the terms of the GNU Lesser General Public
+// License as published by the Free Software Foundation; either
+// version 2.1 of the License, or (at your option) any later version.
+//
+// This library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public
+// License along with this library; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+///////////////////////////////////////////////////////////////////////////////////////////////
+
+package com.puppycrawl.tools.checkstyle.checks.indentation;
+
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.NavigableMap;
+import java.util.Set;
+import java.util.TreeMap;
+
+import com.puppycrawl.tools.checkstyle.api.DetailAST;
+import com.puppycrawl.tools.checkstyle.api.TokenTypes;
+import com.puppycrawl.tools.checkstyle.utils.CommonUtil;
+import com.puppycrawl.tools.checkstyle.utils.TokenUtil;
+
+/**
+ * This class checks line-wrapping into definitions and expressions. The
+ * line-wrapping indentation should be not less than value of the
+ * lineWrappingIndentation parameter.
+ *
+ */
+public class LineWrappingHandler {
+
+    /**
+     * Enum to be used for test if first line's indentation should be checked or not.
+     */
+<span class="fc" id="L44">    public enum LineWrappingOptions {</span>
+
+        /**
+         * First line's indentation should NOT be checked.
+         */
+<span class="fc" id="L49">        IGNORE_FIRST_LINE,</span>
+        /**
+         * First line's indentation should be checked.
+         */
+<span class="fc" id="L53">        NONE;</span>
+
+        /**
+         * Builds enum value from boolean.
+         *
+         * @param val value.
+         * @return enum instance.
+         *
+         * @noinspection BooleanParameter
+         * @noinspectionreason BooleanParameter - check property is essentially boolean
+         */
+        public static LineWrappingOptions ofBoolean(boolean val) {
+<span class="fc" id="L65">            LineWrappingOptions option = NONE;</span>
+<span class="fc bfc" id="L66" title="All 2 branches covered.">            if (val) {</span>
+<span class="fc" id="L67">                option = IGNORE_FIRST_LINE;</span>
+            }
+<span class="fc" id="L69">            return option;</span>
+        }
+
+    }
+
+    /**
+     * The list of ignored token types for being checked by lineWrapping indentation
+     * inside {@code checkIndentation()} as these tokens are checked for lineWrapping
+     * inside their dedicated handlers.
+     *
+     * @see NewHandler#getIndentImpl()
+     * @see BlockParentHandler#curlyIndent()
+     * @see ArrayInitHandler#getIndentImpl()
+     * @see CaseHandler#getIndentImpl()
+     */
+<span class="fc" id="L84">    private static final int[] IGNORED_LIST = {</span>
+        TokenTypes.LCURLY,
+        TokenTypes.RCURLY,
+        TokenTypes.LITERAL_NEW,
+        TokenTypes.ARRAY_INIT,
+        TokenTypes.LITERAL_DEFAULT,
+        TokenTypes.LITERAL_CASE,
+    };
+
+    /**
+     * The current instance of {@code IndentationCheck} class using this
+     * handler. This field used to get access to private fields of
+     * IndentationCheck instance.
+     */
+    private final IndentationCheck indentCheck;
+
+    /**
+     * Sets values of class field, finds last node and calculates indentation level.
+     *
+     * @param instance
+     *            instance of IndentationCheck.
+     */
+<span class="fc" id="L106">    public LineWrappingHandler(IndentationCheck instance) {</span>
+<span class="fc" id="L107">        indentCheck = instance;</span>
+<span class="fc" id="L108">    }</span>
+
+    /**
+     * Checks line wrapping into expressions and definitions using property
+     * 'lineWrappingIndentation'.
+     *
+     * @param firstNode First node to start examining.
+     * @param lastNode Last node to examine inclusively.
+     */
+    public void checkIndentation(DetailAST firstNode, DetailAST lastNode) {
+<span class="fc" id="L118">        checkIndentation(firstNode, lastNode, indentCheck.getLineWrappingIndentation());</span>
+<span class="fc" id="L119">    }</span>
+
+    /**
+     * Checks line wrapping into expressions and definitions.
+     *
+     * @param firstNode First node to start examining.
+     * @param lastNode Last node to examine inclusively.
+     * @param indentLevel Indentation all wrapped lines should use.
+     */
+    private void checkIndentation(DetailAST firstNode, DetailAST lastNode, int indentLevel) {
+<span class="fc" id="L129">        checkIndentation(firstNode, lastNode, indentLevel,</span>
+                -1, LineWrappingOptions.IGNORE_FIRST_LINE);
+<span class="fc" id="L131">    }</span>
+
+    /**
+     * Checks line wrapping into expressions and definitions.
+     *
+     * @param firstNode First node to start examining.
+     * @param lastNode Last node to examine inclusively.
+     * @param indentLevel Indentation all wrapped lines should use.
+     * @param startIndent Indentation first line before wrapped lines used.
+     * @param ignoreFirstLine Test if first line's indentation should be checked or not.
+     */
+    public void checkIndentation(DetailAST firstNode, DetailAST lastNode, int indentLevel,
+            int startIndent, LineWrappingOptions ignoreFirstLine) {
+<span class="fc" id="L144">        final NavigableMap&lt;Integer, DetailAST&gt; firstNodesOnLines = collectFirstNodes(firstNode,</span>
+                lastNode);
+
+<span class="fc" id="L147">        final DetailAST firstLineNode = firstNodesOnLines.get(firstNodesOnLines.firstKey());</span>
+<span class="fc bfc" id="L148" title="All 2 branches covered.">        if (firstLineNode.getType() == TokenTypes.AT) {</span>
+<span class="fc" id="L149">            checkForAnnotationIndentation(firstNodesOnLines, indentLevel);</span>
+        }
+
+<span class="fc bfc" id="L152" title="All 2 branches covered.">        if (ignoreFirstLine == LineWrappingOptions.IGNORE_FIRST_LINE) {</span>
+            // First node should be removed because it was already checked before.
+<span class="fc" id="L154">            firstNodesOnLines.remove(firstNodesOnLines.firstKey());</span>
+        }
+
+        final int firstNodeIndent;
+<span class="fc bfc" id="L158" title="All 2 branches covered.">        if (startIndent == -1) {</span>
+<span class="fc" id="L159">            firstNodeIndent = getLineStart(firstLineNode);</span>
+        }
+        else {
+<span class="fc" id="L162">            firstNodeIndent = startIndent;</span>
+        }
+<span class="fc" id="L164">        final int currentIndent = firstNodeIndent + indentLevel;</span>
+
+<span class="fc bfc" id="L166" title="All 2 branches covered.">        for (DetailAST node : firstNodesOnLines.values()) {</span>
+<span class="fc" id="L167">            final int currentType = node.getType();</span>
+<span class="fc bfc" id="L168" title="All 4 branches covered.">            if (checkForNullParameterChild(node) || checkForMethodLparenNewLine(node)) {</span>
+<span class="fc" id="L169">                continue;</span>
+            }
+<span class="fc bfc" id="L171" title="All 2 branches covered.">            if (currentType == TokenTypes.RPAREN) {</span>
+<span class="fc" id="L172">                logWarningMessage(node, firstNodeIndent);</span>
+            }
+<span class="fc bfc" id="L174" title="All 2 branches covered.">            else if (!TokenUtil.isOfType(currentType, IGNORED_LIST)) {</span>
+<span class="fc" id="L175">                logWarningMessage(node, currentIndent);</span>
+            }
+<span class="fc" id="L177">        }</span>
+<span class="fc" id="L178">    }</span>
+
+    /**
+     * Checks for annotation indentation.
+     *
+     * @param firstNodesOnLines the nodes which are present in the beginning of each line.
+     * @param indentLevel line wrapping indentation.
+     */
+    public void checkForAnnotationIndentation(
+            NavigableMap&lt;Integer, DetailAST&gt; firstNodesOnLines, int indentLevel) {
+<span class="fc" id="L188">        final DetailAST firstLineNode = firstNodesOnLines.get(firstNodesOnLines.firstKey());</span>
+<span class="fc" id="L189">        DetailAST node = firstLineNode.getParent();</span>
+<span class="fc bfc" id="L190" title="All 2 branches covered.">        while (node != null) {</span>
+<span class="fc bfc" id="L191" title="All 2 branches covered.">            if (node.getType() == TokenTypes.ANNOTATION) {</span>
+<span class="fc" id="L192">                final DetailAST atNode = node.getFirstChild();</span>
+<span class="fc" id="L193">                final NavigableMap&lt;Integer, DetailAST&gt; annotationLines =</span>
+<span class="fc" id="L194">                        firstNodesOnLines.subMap(</span>
+<span class="fc" id="L195">                                node.getLineNo(),</span>
+                                true,
+<span class="fc" id="L197">                                getNextNodeLine(firstNodesOnLines, node),</span>
+                                true
+                        );
+<span class="fc" id="L200">                checkAnnotationIndentation(atNode, annotationLines, indentLevel);</span>
+            }
+<span class="fc" id="L202">            node = node.getNextSibling();</span>
+        }
+<span class="fc" id="L204">    }</span>
+
+    /**
+     * Checks whether parameter node has any child or not.
+     *
+     * @param node the node for which to check.
+     * @return true if  parameter has no child.
+     */
+    public static boolean checkForNullParameterChild(DetailAST node) {
+<span class="fc bfc" id="L213" title="All 4 branches covered.">        return node.getFirstChild() == null &amp;&amp; node.getType() == TokenTypes.PARAMETERS;</span>
+    }
+
+    /**
+     * Checks whether the method lparen starts from a new line or not.
+     *
+     * @param node the node for which to check.
+     * @return true if method lparen starts from a new line.
+     */
+    public static boolean checkForMethodLparenNewLine(DetailAST node) {
+<span class="fc" id="L223">        final int parentType = node.getParent().getType();</span>
+<span class="fc bfc" id="L224" title="All 4 branches covered.">        return parentType == TokenTypes.METHOD_DEF &amp;&amp; node.getType() == TokenTypes.LPAREN;</span>
+    }
+
+    /**
+     * Gets the next node line from the firstNodesOnLines map unless there is no next line, in
+     * which case, it returns the last line.
+     *
+     * @param firstNodesOnLines NavigableMap of lines and their first nodes.
+     * @param node the node for which to find the next node line
+     * @return the line number of the next line in the map
+     */
+    private static Integer getNextNodeLine(
+            NavigableMap&lt;Integer, DetailAST&gt; firstNodesOnLines, DetailAST node) {
+<span class="fc" id="L237">        Integer nextNodeLine = firstNodesOnLines.higherKey(node.getLastChild().getLineNo());</span>
+<span class="fc bfc" id="L238" title="All 2 branches covered.">        if (nextNodeLine == null) {</span>
+<span class="fc" id="L239">            nextNodeLine = firstNodesOnLines.lastKey();</span>
+        }
+<span class="fc" id="L241">        return nextNodeLine;</span>
+    }
+
+    /**
+     * Finds first nodes on line and puts them into Map.
+     *
+     * @param firstNode First node to start examining.
+     * @param lastNode Last node to examine inclusively.
+     * @return NavigableMap which contains lines numbers as a key and first
+     *         nodes on lines as a values.
+     */
+    private NavigableMap&lt;Integer, DetailAST&gt; collectFirstNodes(DetailAST firstNode,
+            DetailAST lastNode) {
+<span class="fc" id="L254">        final NavigableMap&lt;Integer, DetailAST&gt; result = new TreeMap&lt;&gt;();</span>
+
+<span class="fc" id="L256">        result.put(firstNode.getLineNo(), firstNode);</span>
+<span class="fc" id="L257">        DetailAST curNode = firstNode.getFirstChild();</span>
+
+<span class="fc bfc" id="L259" title="All 2 branches covered.">        while (curNode != lastNode) {</span>
+<span class="fc bfc" id="L260" title="All 2 branches covered.">            if (curNode.getType() == TokenTypes.OBJBLOCK</span>
+<span class="fc bfc" id="L261" title="All 2 branches covered.">                    || curNode.getType() == TokenTypes.SLIST) {</span>
+<span class="fc" id="L262">                curNode = curNode.getLastChild();</span>
+            }
+
+<span class="fc" id="L265">            final DetailAST firstTokenOnLine = result.get(curNode.getLineNo());</span>
+
+<span class="fc bfc" id="L267" title="All 2 branches covered.">            if (firstTokenOnLine == null</span>
+<span class="fc bfc" id="L268" title="All 2 branches covered.">                || expandedTabsColumnNo(firstTokenOnLine) &gt;= expandedTabsColumnNo(curNode)) {</span>
+<span class="fc" id="L269">                result.put(curNode.getLineNo(), curNode);</span>
+            }
+<span class="fc" id="L271">            curNode = getNextCurNode(curNode);</span>
+<span class="fc" id="L272">        }</span>
+<span class="fc" id="L273">        return result;</span>
+    }
+
+    /**
+     * Returns next curNode node.
+     *
+     * @param curNode current node.
+     * @return next curNode node.
+     */
+    private static DetailAST getNextCurNode(DetailAST curNode) {
+<span class="fc" id="L283">        DetailAST nodeToVisit = curNode.getFirstChild();</span>
+<span class="fc" id="L284">        DetailAST currentNode = curNode;</span>
+
+<span class="fc bfc" id="L286" title="All 2 branches covered.">        while (nodeToVisit == null) {</span>
+<span class="fc" id="L287">            nodeToVisit = currentNode.getNextSibling();</span>
+<span class="fc bfc" id="L288" title="All 2 branches covered.">            if (nodeToVisit == null) {</span>
+<span class="fc" id="L289">                currentNode = currentNode.getParent();</span>
+            }
+        }
+<span class="fc" id="L292">        return nodeToVisit;</span>
+    }
+
+    /**
+     * Checks whether the given node is next to an access specifier.
+     *
+     * @param parentNode the wrapped annotation.
+     * @return true if this node appears after an access specifier.
+     */
+    private boolean isPreviousToPreviousSiblingAccessModifier(final DetailAST parentNode) {
+<span class="pc bpc" id="L302" title="1 of 2 branches missed.">        return parentNode.getPreviousSibling() != null</span>
+<span class="fc bfc" id="L303" title="All 2 branches covered.">            &amp;&amp; parentNode.getPreviousSibling().getPreviousSibling() != null</span>
+<span class="fc" id="L304">            &amp;&amp; Set.of(TokenTypes.LITERAL_PUBLIC, TokenTypes.LITERAL_PRIVATE,</span>
+<span class="fc" id="L305">                    TokenTypes.LITERAL_PROTECTED)</span>
+<span class="fc bfc" id="L306" title="All 2 branches covered.">                .contains(parentNode.getPreviousSibling().getPreviousSibling().getType());</span>
+    }
+
+    /**
+     * Checks if the previous sibling is an annotation or not.
+     *
+     * @param parentNode the wrapped annotation node.
+     * @return true if the previous sibling is an annotation else returns false.
+     */
+    private boolean isPreviousSiblingAnnotation(final DetailAST parentNode) {
+<span class="fc bfc" id="L316" title="All 2 branches covered.">        return parentNode.getPreviousSibling() != null</span>
+<span class="pc bpc" id="L317" title="1 of 2 branches missed.">            &amp;&amp; parentNode.getPreviousSibling().getType() == TokenTypes.ANNOTATION;</span>
+    }
+
+    /**
+     * Checks whether current node is an annotation wrapped within a class definition.
+     *
+     * @param node It is the current node in consideration.
+     * @param parentNode It is the parent node of the current node.
+     * @return true if the current node is annotation
+     *     and present between access specifier and class keyword.
+     */
+    private boolean isCurrentNodeAnnotationLineWrappedInClassDef(DetailAST node,
+            DetailAST parentNode) {
+<span class="fc bfc" id="L330" title="All 2 branches covered.">        return node.getType() == TokenTypes.AT</span>
+<span class="fc bfc" id="L331" title="All 2 branches covered.">            &amp;&amp; isPreviousSiblingAnnotation(parentNode)</span>
+<span class="fc bfc" id="L332" title="All 2 branches covered.">            &amp;&amp; isPreviousToPreviousSiblingAccessModifier(parentNode);</span>
+    }
+
+    /**
+     * Checks Parent node is Modifier OR Annotation.
+     *
+     * @param parentNode is the parent to the current node.
+     * @return true if parent node is either modifier or annotation
+     *     else false.
+     */
+    private boolean isParentNodeModifierOrAnnotation(DetailAST parentNode) {
+<span class="fc bfc" id="L343" title="All 2 branches covered.">        return parentNode.getParent().getType() == TokenTypes.MODIFIERS</span>
+<span class="fc bfc" id="L344" title="All 2 branches covered.">            || parentNode.getParent().getType() == TokenTypes.ANNOTATIONS;</span>
+    }
+
+    /**
+     * Checks whether current node is close annotation and alone in line
+     * or current node is '@' node or not.
+     *
+     * @param node is the current node in consideration.
+     * @param lastAnnotationNode is last child of current atNode.
+     * @return true if current node is a close annotation and alone in line
+     *     or current node is '@' node or not else false.
+     */
+    private boolean isCurrentNodeCloseAnnotationAloneInLineOrCurrentIsAtNode(
+        DetailAST node, DetailAST lastAnnotationNode) {
+<span class="fc" id="L358">        final int lastAnnotationLine = lastAnnotationNode.getLineNo();</span>
+<span class="fc bfc" id="L359" title="All 2 branches covered.">        return node.getLineNo() == lastAnnotationLine</span>
+<span class="fc bfc" id="L360" title="All 2 branches covered.">                    &amp;&amp; isEndOfScope(lastAnnotationNode, node)</span>
+<span class="fc bfc" id="L361" title="All 2 branches covered.">                || node.getType() == TokenTypes.AT;</span>
+    }
+
+    /**
+     * Checks line wrapping into annotations.
+     *
+     * @param atNode block tag node.
+     * @param firstNodesOnLines map which contains
+     *     first nodes as values and line numbers as keys.
+     * @param indentLevel line wrapping indentation.
+     */
+    private void checkAnnotationIndentation(DetailAST atNode,
+            NavigableMap&lt;Integer, DetailAST&gt; firstNodesOnLines, int indentLevel) {
+<span class="fc" id="L374">        final int firstNodeIndent = getLineStart(atNode);</span>
+<span class="fc" id="L375">        final int currentIndent = firstNodeIndent + indentLevel;</span>
+<span class="fc" id="L376">        final Collection&lt;DetailAST&gt; values = firstNodesOnLines.values();</span>
+<span class="fc" id="L377">        final DetailAST lastAnnotationNode = atNode.getParent().getLastChild();</span>
+
+<span class="fc" id="L379">        final Iterator&lt;DetailAST&gt; itr = values.iterator();</span>
+<span class="fc bfc" id="L380" title="All 2 branches covered.">        while (firstNodesOnLines.size() &gt; 1) {</span>
+<span class="fc" id="L381">            final DetailAST node = itr.next();</span>
+
+<span class="fc" id="L383">            final DetailAST parentNode = node.getParent();</span>
+<span class="fc" id="L384">            final boolean isArrayInitPresentInAncestors =</span>
+<span class="fc" id="L385">                isParentContainsTokenType(node, TokenTypes.ANNOTATION_ARRAY_INIT);</span>
+<span class="fc" id="L386">            final boolean isCurrentNodeCloseAnnotationAloneInLineOrCurrentIsAtNode =</span>
+<span class="fc" id="L387">                isCurrentNodeCloseAnnotationAloneInLineOrCurrentIsAtNode(node, lastAnnotationNode);</span>
+
+<span class="fc bfc" id="L389" title="All 4 branches covered.">            final boolean condition = !isArrayInitPresentInAncestors</span>
+                &amp;&amp; (isCurrentNodeCloseAnnotationAloneInLineOrCurrentIsAtNode
+<span class="fc bfc" id="L391" title="All 2 branches covered.">                    &amp;&amp; isParentNodeModifierOrAnnotation(parentNode)</span>
+<span class="fc bfc" id="L392" title="All 2 branches covered.">                    || TokenUtil.areOnSameLine(node, atNode));</span>
+
+<span class="fc bfc" id="L394" title="All 4 branches covered.">            if (condition &amp;&amp; isCurrentNodeAnnotationLineWrappedInClassDef(node, parentNode)) {</span>
+<span class="fc" id="L395">                logWarningMessage(node, currentIndent);</span>
+            }
+<span class="fc bfc" id="L397" title="All 2 branches covered.">            else if (condition) {</span>
+<span class="fc" id="L398">                logWarningMessage(node, firstNodeIndent);</span>
+            }
+<span class="fc bfc" id="L400" title="All 2 branches covered.">            else if (!isArrayInitPresentInAncestors) {</span>
+<span class="fc" id="L401">                logWarningMessage(node, currentIndent);</span>
+            }
+<span class="fc" id="L403">            itr.remove();</span>
+<span class="fc" id="L404">        }</span>
+<span class="fc" id="L405">    }</span>
+
+    /**
+     * Checks line for end of scope.  Handles occurrences of close braces and close parenthesis on
+     * the same line.
+     *
+     * @param lastAnnotationNode the last node of the annotation
+     * @param node the node indicating where to begin checking
+     * @return true if all the nodes up to the last annotation node are end of scope nodes
+     *         false otherwise
+     */
+    private static boolean isEndOfScope(final DetailAST lastAnnotationNode, final DetailAST node) {
+<span class="fc" id="L417">        DetailAST checkNode = node;</span>
+<span class="fc" id="L418">        boolean endOfScope = true;</span>
+<span class="fc bfc" id="L419" title="All 4 branches covered.">        while (endOfScope &amp;&amp; !checkNode.equals(lastAnnotationNode)) {</span>
+<span class="fc bfc" id="L420" title="All 2 branches covered.">            switch (checkNode.getType()) {</span>
+                case TokenTypes.RCURLY:
+                case TokenTypes.RBRACK:
+<span class="fc bfc" id="L423" title="All 2 branches covered.">                    while (checkNode.getNextSibling() == null) {</span>
+<span class="fc" id="L424">                        checkNode = checkNode.getParent();</span>
+                    }
+<span class="fc" id="L426">                    checkNode = checkNode.getNextSibling();</span>
+<span class="fc" id="L427">                    break;</span>
+                default:
+<span class="fc" id="L429">                    endOfScope = false;</span>
+            }
+        }
+<span class="fc" id="L432">        return endOfScope;</span>
+    }
+
+    /**
+     * Checks that some parent of given node contains given token type.
+     *
+     * @param node node to check
+     * @param type type to look for
+     * @return true if there is a parent of given type
+     */
+    private static boolean isParentContainsTokenType(final DetailAST node, int type) {
+<span class="fc" id="L443">        boolean returnValue = false;</span>
+<span class="fc bfc" id="L444" title="All 2 branches covered.">        for (DetailAST ast = node.getParent(); ast != null; ast = ast.getParent()) {</span>
+<span class="fc bfc" id="L445" title="All 2 branches covered.">            if (ast.getType() == type) {</span>
+<span class="fc" id="L446">                returnValue = true;</span>
+<span class="fc" id="L447">                break;</span>
+            }
+        }
+<span class="fc" id="L450">        return returnValue;</span>
+    }
+
+    /**
+     * Get the column number for the start of a given expression, expanding
+     * tabs out into spaces in the process.
+     *
+     * @param ast   the expression to find the start of
+     *
+     * @return the column number for the start of the expression
+     */
+    private int expandedTabsColumnNo(DetailAST ast) {
+<span class="fc" id="L462">        final String line =</span>
+<span class="fc" id="L463">            indentCheck.getLine(ast.getLineNo() - 1);</span>
+
+<span class="fc" id="L465">        return CommonUtil.lengthExpandedTabs(line, ast.getColumnNo(),</span>
+<span class="fc" id="L466">            indentCheck.getIndentationTabWidth());</span>
+    }
+
+    /**
+     * Get the start of the line for the given expression.
+     *
+     * @param ast   the expression to find the start of the line for
+     *
+     * @return the start of the line for the given expression
+     */
+    private int getLineStart(DetailAST ast) {
+<span class="fc" id="L477">        final String line = indentCheck.getLine(ast.getLineNo() - 1);</span>
+<span class="fc" id="L478">        return getLineStart(line);</span>
+    }
+
+    /**
+     * Get the start of the specified line.
+     *
+     * @param line the specified line number
+     * @return the start of the specified line
+     */
+    private int getLineStart(String line) {
+<span class="fc" id="L488">        int index = 0;</span>
+<span class="fc bfc" id="L489" title="All 2 branches covered.">        while (Character.isWhitespace(line.charAt(index))) {</span>
+<span class="fc" id="L490">            index++;</span>
+        }
+<span class="fc" id="L492">        return CommonUtil.lengthExpandedTabs(line, index, indentCheck.getIndentationTabWidth());</span>
+    }
+
+    /**
+     * Logs warning message if indentation is incorrect.
+     *
+     * @param currentNode
+     *            current node which probably invoked a violation.
+     * @param currentIndent
+     *            correct indentation.
+     */
+    private void logWarningMessage(DetailAST currentNode, int currentIndent) {
+<span class="fc bfc" id="L504" title="All 2 branches covered.">        if (indentCheck.isForceStrictCondition()) {</span>
+<span class="fc bfc" id="L505" title="All 2 branches covered.">            if (expandedTabsColumnNo(currentNode) != currentIndent) {</span>
+<span class="fc" id="L506">                indentCheck.indentationLog(currentNode,</span>
+<span class="fc" id="L507">                        IndentationCheck.MSG_ERROR, currentNode.getText(),</span>
+<span class="fc" id="L508">                        expandedTabsColumnNo(currentNode), currentIndent);</span>
+            }
+        }
+        else {
+<span class="fc bfc" id="L512" title="All 2 branches covered.">            if (expandedTabsColumnNo(currentNode) &lt; currentIndent) {</span>
+<span class="fc" id="L513">                indentCheck.indentationLog(currentNode,</span>
+<span class="fc" id="L514">                        IndentationCheck.MSG_ERROR, currentNode.getText(),</span>
+<span class="fc" id="L515">                        expandedTabsColumnNo(currentNode), currentIndent);</span>
+            }
+        }
+<span class="fc" id="L518">    }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>
